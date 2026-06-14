@@ -75,33 +75,98 @@
 
 온프레미스는 **Active/Standby 구조와 DB 복제**를 통해 장애 대응이 가능하도록 구성하고, AWS EKS 기반 서비스는 MSA 구조로 배치했습니다. 또한 **Alloy, Prometheus, Grafana, OpenTelemetry**를 활용해 클라우드와 온프레미스 환경의 지표를 통합적으로 관측할 수 있도록 했습니다.
 
+---
 
 ### 3-2. 통합 워크플로우 다이어그램
 
-<!-- 여기에 주문→체결→알림 통합 워크플로우 이미지를 첨부하세요 -->
+매순간의 주문 처리 흐름은 **채널계 주문 접수 → Kafka 이벤트 발행 → 온프레미스 체결 → 채널계 스냅샷 동기화 → 알림 저장** 순서로 진행됩니다. 사용자의 요청은 AWS EKS의 `order-service`에서 빠르게 검증·접수하고, 실제 체결과 자산 변경은 온프레미스 체결계와 원장에서 처리되도록 분리했습니다.
 
-**주문 1건의 전체 흐름**
+#### 주문 1건의 전체 흐름
 
-```
-[사용자] 
-   │ ① 매수/매도 주문
+```text
+[사용자]
+   │ ① 매수/매도 주문 요청
    ▼
-[주문 API POD (AWS EKS)]
-   │ ② JWT 인증 → Redis 잔고 예약 → order_snapshot(PENDING) 저장
-   │ ③ 사용자에게 '접수됨' 즉시 응답
-   │ ④ Kafka 'order.requested' 발행 (VPN 경유)
+[ALB → order-service POD (AWS EKS)]
+   │ ② JWT 인증 및 대회 참가 여부·장 운영시간·종목 검증
+   │ ③ Redis Lua Script로 주문 가능 금액 원자적 예약
+   │ ④ RDS order_snapshot에 PENDING 상태 저장
+   │ ⑤ Kafka 'order.request' 발행 (VPN 경유)
+   │ ⑥ 발행 성공 후 사용자에게 주문 접수 결과 응답
+   ▼
+[온프레미스 Kafka]
+   │ 주문 ID를 Key로 체결계에 이벤트 전달
    ▼
 [체결 엔진 (온프레미스)]
-   │ ⑤ Order Book 매칭 → 체결
-   │ ⑥ 원장 DB(MySQL Master) FOR UPDATE 최종 잔고 차감
-   │ ⑦ Kafka 'order.completed' / 'execution.confirmed' 발행
+   │ ⑦ Order Book에 주문 등록 및 매수·매도 주문 매칭
+   │ ⑧ 원장 트랜잭션에서 잔고·보유종목·체결 내역 반영
+   │ ⑨ Kafka 'execution.confirmed' 이벤트 발행
    ▼
-[채널계 멀티 Consumer]
-   ├─ notification-group → 알림 발송 (Lambda → SNS/SES)
-   ├─ ranking-group     → 랭킹 점수 집계 (Redis Sorted Set)
-   └─ websocket-group   → 사용자 화면 실시간 갱신
+[trade-sync-worker POD (AWS EKS)]
+   │ ⑩ execution.confirmed 이벤트 소비
+   │ ⑪ eventId 기반 중복 처리 방지
+   │ ⑫ 하나의 트랜잭션으로 조회 모델 갱신
+   │     ├─ trade_history 체결 내역 저장
+   │     ├─ order_snapshot 잔여 수량 차감
+   │     └─ 주문 상태 PARTIALLY_FILLED/FILLED 변경
+   │ ⑬ 원장 동기화 데이터로 portfolio_snapshot 갱신
+   ▼
+[notification-api POD]
+   │ ⑭ 사용자의 알림 수신 설정 확인
+   │ ⑮ TRADE_FILLED_BUY/SELL 알림을 RDS에 저장
+   ▼
+[사용자 화면]
+   ├─ 주문·체결 API로 최신 주문 스냅샷 조회
+   ├─ 포트폴리오 API로 잔고·보유종목 조회
+   └─ 알림 API로 체결 완료 알림 조회
 ```
 
+#### 취소 흐름
+
+주문 취소도 주문과 동일하게 채널계에서 요청을 접수한 뒤 Kafka 이벤트를 통해 체결계로 전달됩니다. 다만 취소 요청 직후 잔고를 즉시 복구하지 않고, 반환 예정 금액을 Redis에 TTL과 함께 기록하여 취소 확정 전 동일 금액이 다시 사용되는 상황을 방지했습니다.
+
+```text
+[사용자 취소 요청]
+   │
+   ▼
+[order-service POD (AWS EKS)]
+   │ ① order_snapshot 상태를 CANCEL_REQUESTED로 변경
+   │ ② Redis에 반환 예정 금액과 TTL 기록
+   │ ③ Kafka 'order.cancel' 발행
+   ▼
+[체결 엔진 (온프레미스)]
+   │ ④ 주문의 체결 여부와 취소 가능 여부 판단
+   │ ⑤ 취소 결과 이벤트 발행
+   ▼
+[trade-sync-worker POD (AWS EKS)]
+   │ ⑥ 취소 결과 이벤트 소비
+   │ ⑦ order_snapshot에 취소 결과 반영
+   │ ⑧ 필요 시 예약 금액 반환 처리
+   ▼
+[notification-api POD]
+   │ ⑨ 취소 완료 알림 저장
+```
+
+#### 설계 핵심
+
+* **주문 가능 금액 예약은 Redis Lua Script로 원자적으로 처리**합니다.
+  동일 계좌에서 여러 주문이 동시에 들어와도 잔액 검증과 차감이 하나의 Script 안에서 수행되므로 중복 주문으로 인한 과주문을 방지할 수 있습니다.
+
+* **주문·체결 연동은 VPN을 경유한 Kafka 비동기 이벤트로 처리**합니다.
+  채널계는 주문을 빠르게 접수하고, 체결계는 Kafka 이벤트를 소비해 비동기로 처리합니다. 이를 통해 체결계 지연이 사용자 응답 흐름에 직접 영향을 주지 않도록 했습니다.
+
+* **원장은 최종 자산 데이터, RDS 스냅샷은 채널계 조회 데이터를 담당**합니다.
+  잔고와 보유종목의 최종 정합성은 온프레미스 원장이 관리하고, 채널계는 `order_snapshot`, `trade_history`, `portfolio_snapshot`을 조회해 빠르게 응답합니다.
+
+* **eventId 처리 이력으로 Kafka 이벤트 재전송에 대응**합니다.
+  동일한 `execution.confirmed` 이벤트가 재전송되더라도 이미 성공 처리된 `eventId`는 다시 반영하지 않아 체결 내역, 주문 상태, 포트폴리오가 중복 갱신되는 문제를 방지했습니다.
+
+* **알림은 notification-api를 통해 RDS에 저장**합니다.
+  현재 구조에서는 Lambda, SNS, SES가 아니라 `trade-sync-worker`가 `notification-api`를 HTTP로 호출하여 체결 완료 및 취소 완료 알림을 DB에 저장합니다.
+
+* **실시간 SSE는 별도 기능으로 분리**합니다.
+  사용자 실시간 SSE 기능은 존재하지만, 현재 체결 워크플로우와 자동 연결된 운영 Consumer는 확인되지 않았기 때문에 주문·체결 다이어그램에서는 제외했습니다. 대신 사용자는 주문·체결, 포트폴리오, 알림 API를 통해 최신 스냅샷을 조회합니다.
+---
 ### 3-3. 세부 기능 소개
 
 #### [기능 1] Redis Lua Script를 이용한 주문 가능 금액 원자적 선점
@@ -256,11 +321,3 @@ private void resubscribeActive() {
 * **코드 링크**: `MarketWebSocketHandler.java`
 
 ---
-
-## 4. 팀 구성 및 역할
-
-| 이름 | 담당 영역 |
-| --- | --- |
-| (팀원) | (역할 작성) |
-
-<!-- 팀원별 역할을 작성하세요 -->
