@@ -23,9 +23,9 @@
 | **Data**          | MySQL / MariaDB (온프레 Master·Slave, AWS RDS Replica), Redis (ElastiCache, 온프레 Redis Sentinel), Apache Kafka |
 | **External**      | 한국투자증권 Open API, WebSocket                                                                                  |
 | **Cloud (AWS)**   | EKS, RDS, ElastiCache, ECR, ALB/NLB, WAF, Route 53, S3                                                            |
-| **On-Premise**    | VMware ESXi / vCenter, Rocky Linux 9, Docker Compose, Keepalived                                                  |
+| **On-Premise**    | VMware ESXi / vCenter, Rocky Linux 9, Docker Compose, Keepalived, pfSense (Site-to-Site VPN 종단)                |
 | **IaC / CI·CD**  | Terraform, GitHub Actions, GitLab CE + ArgoCD + Argo Rollouts                                                     |
-| **Observability** | Prometheus, Grafana, Grafana Alloy, OpenTelemetry                                                                 |
+| **Observability** | Prometheus, Grafana, Loki, Jaeger, Grafana Alloy, OpenTelemetry                                                   |
 
 ---
 
@@ -56,6 +56,39 @@
 - **채널계**: 고객 요청을 검증하고, 주문·취소 요청은 채널 DB의 주문 스냅샷에 접수 상태를 기록한 뒤 Kafka로 발행합니다. 조회는 RDS의 회원·주문·포트폴리오 스냅샷과 Redis 등 **채널계 조회 모델(CQRS)** 을 사용합니다.
 - **체결계**: Order Book 기반으로 주문을 매칭하고, 체결 결과·갱신된 잔고·보유종목을 Kafka 이벤트로 발행합니다.
 - **계정계(원장)**: 잔고·보유종목·체결 내역의 **최종 자산 변경**을 담당합니다. 채널계 스냅샷은 원장의 복제본이므로, 조회가 집중되는 채널계와 정합성이 중요한 원장을 분리하여 **채널계는 수평 확장, 원장은 온프레미스에서 일관성 있게 운영**합니다.
+
+#### 마이크로서비스 구성 (MSA)
+
+채널계와 계정계 모두 **도메인별 독립 마이크로서비스**로 분해했습니다. Gradle 멀티모듈 모노레포로 관리하되 배포는 **서비스 단위 컨테이너**로 이루어져, 서비스별 독립 배포·확장·장애 격리가 가능합니다. EKS에서는 워크로드 성격별 노드그룹으로 격리 배치하여, 트래픽이 몰리는 서비스(예: 실시간 시세)만 선택적으로 스케일아웃합니다.
+
+**채널계 (AWS EKS)**
+
+| 서비스 | 책임 |
+| --- | --- |
+| `auth-service` | 회원가입·로그인·JWT 발급/재발급·이메일 인증 |
+| `admin-service` | 회원·대회·공지·시스템 관리, 대회 랭킹 스케줄러 |
+| `contest-service` | 모의투자 대회 조회·참가·탈퇴·랭킹 |
+| `market-service` | 종목·차트·지수·관심종목, KIS 시세 스냅샷 |
+| `order-service` | 주문 접수·취소, 포트폴리오, 증거금(주문가능금액) 예약 |
+| `notification-api` | 알림·공지 발행/조회, 시세 알림 스케줄러 |
+| `market-realtime-service` | KIS 실시간 시세 수집 → Redis 캐싱 → WebSocket 송출 |
+| `user-realtime-service` | 사용자별 실시간 이벤트 푸시(SSE) |
+| `trade-sync-worker` | Kafka 이벤트 소비 → 채널 DB 동기화(Read-Model) |
+
+**계정계 (On-Premises)**
+
+| 서비스 | 책임 |
+| --- | --- |
+| `execution-engine` | 주문 수신·상태 관리, 시장가/지정가 체결(매칭), 부분체결, 자동취소 |
+| `ledger-service` | 계좌 원장·잔고·보유종목·거래내역·손익(PnL), EOD 마감·대사 |
+| `member-service` | 회원 자격증명(비밀번호) 관리, 보안 명령 처리 |
+
+**MSA 채택 이유**
+
+- **독립 배포** — 서비스별로 배포(GitOps)하여 장애 시 영향 범위 최소화
+- **독립 확장** — 실시간 시세·주문 등 부하 큰 서비스만 선택적으로 스케일
+- **장애 격리** — 한 서비스 장애가 전체로 전파되지 않음
+- **느슨한 결합** — Kafka 이벤트 기반 비동기 연동으로 서비스 간 의존도 최소화
 
 ---
 
