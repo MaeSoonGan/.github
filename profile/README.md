@@ -113,7 +113,7 @@ private SyncResult processEvent(String eventId, String eventType, String aggrega
 }
 ```
 
-**코드 링크**: [TradeSyncService.java](Back-End/Back-End/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java#L594)
+**코드 링크**: [TradeSyncService.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java#L594)
 
 ---
 
@@ -140,7 +140,7 @@ private void send(String topic, String key, Object event) {
 }
 ```
 
-**코드 링크**: [OrderEventPublisher.java](Back-End/Back-End/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java)
+**코드 링크**: [OrderEventPublisher.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java)
 
 ---
 
@@ -173,7 +173,7 @@ public void listenOrderRequest(@Payload OrderRequestEvent event) {
 }
 ```
 
-**코드 링크**: [KafkaTopics.java](Onpre-Back-End/Onpre-Back-End/libs/event-contracts/src/main/java/com/maesungan/onprem/event/KafkaTopics.java) · [OrderEventPublisher.java](Back-End/Back-End/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java) · [OrderEventListener.java](Onpre-Back-End/Onpre-Back-End/apps/execution-engine/src/main/java/com/maesungan/onprem/execution/order/messaging/OrderEventListener.java)
+**코드 링크**: [KafkaTopics.java](https://github.com/MaeSoonGan/Onpre-Back-End/blob/main/libs/event-contracts/src/main/java/com/maesungan/onprem/event/KafkaTopics.java) · [OrderEventPublisher.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java) · [OrderEventListener.java](https://github.com/MaeSoonGan/Onpre-Back-End/blob/main/apps/execution-engine/src/main/java/com/maesungan/onprem/execution/order/messaging/OrderEventListener.java)
 
 ---
 
@@ -208,7 +208,7 @@ public ReserveResult reserve(long memberId, long contestId, BigDecimal amount) {
 }
 ```
 
-**코드 링크**: [BalanceCache.java](Back-End/Back-End/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java)
+**코드 링크**: [BalanceCache.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java)
 
 ---
 
@@ -252,6 +252,6 @@ redis.call('DEL', KEYS[3])
 return 1
 ```
 
-**코드 링크**: [BalanceCache.java](Back-End/Back-End/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java) · [TradeSyncService.java](Back-End/Back-End/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java)
+**코드 링크**: [BalanceCache.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java) · [TradeSyncService.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java)
 
 ---
