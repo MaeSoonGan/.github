@@ -8,19 +8,14 @@
 
 ## 1. 프로젝트 개요
 
-### 주제
+- **주제** : 한국투자증권 Open API의 실시간 시세로 가상 자산을 매매하고 모의투자 대회로 수익률을 겨루는 모의투자 거래 플랫폼입니다. 실제 증권사의 **채널계 / 계정계 / 체결계 분리 구조**를 클라우드 ↔ 온프레미스 하이브리드로 구현하고, **장애 상황에서도 멈추지 않는 고가용성** 확보를 최우선 목표로 설계했습니다.
 
-한국투자증권 Open API의 실시간 시세로 가상 자산을 매매하고 모의투자 대회로 수익률을 겨루는 모의투자 거래 플랫폼입니다. 실제 증권사의 **채널계 / 계정계 / 체결계 분리 구조**를 클라우드 ↔ 온프레미스 하이브리드로 구현하고, **장애 상황에서도 멈추지 않는 고가용성** 확보를 최우선 목표로 설계했습니다.
+- **프로젝트 기획 배경** : 증권 서비스는 장 운영 중 단 몇 분의 장애도 큰 손실로 이어지므로, **"장애가 발생해도 멈추지 않는"** 고가용성이 핵심 과제입니다. 이를 위해 다음과 같이 설계했습니다.
+  - **오토스케일링** — 채널계(AWS EKS)는 장 개장·마감 트래픽 급증에 EKS 오토스케일링으로 탄력 대응
+  - **이중화** — AZ 이중화, RDS Primary/Replica, Redis Multi-AZ, NAT/로드밸런서 이중화로 단일 장애점 제거
+  - **DR** — 계정계(온프레미스)는 DC1 Active / DC2 Standby + Keepalived VIP + DB 복제로 데이터센터 장애 시에도 서비스 연속성 유지
 
-### 기획 배경
-
-증권 서비스는 장 운영 중 단 몇 분의 장애도 큰 손실로 이어지므로, **"장애가 발생해도 멈추지 않는"** 고가용성이 핵심 과제입니다. 이를 위해 매순간은 다음과 같이 설계했습니다.
-
-- **오토스케일링** — 채널계(AWS EKS)는 장 개장·마감 트래픽 급증에 EKS 오토스케일링으로 탄력 대응
-- **이중화** — AZ 이중화, RDS Primary/Replica, Redis Multi-AZ, NAT/로드밸런서 이중화로 단일 장애점 제거
-- **DR** — 계정계(온프레미스)는 DC1 Active / DC2 Standby + Keepalived VIP + DB 복제로 데이터센터 장애 시에도 서비스 연속성 유지
-
-### 기술 스택
+- **기술 스택** :
 
 | 영역                    | 기술                                                                                                              |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -42,6 +37,8 @@
   <img width="2850" height="1780" alt="최종_전체_아키텍처" src="https://github.com/user-attachments/assets/89a51d35-79e8-4cfe-9f3a-c0aabf563187" />
 </p>
 
+### 설명
+
 매순간은 AWS 클라우드와 온프레미스를 **Site-to-Site VPN**으로 연결한 하이브리드 구조입니다.
 
 - **채널계 (AWS EKS)**: 회원·시세·주문·거래·자산·알림·실시간 시세·사용자 실시간 이벤트를 서비스별 Pod로 배치. 외부 트래픽은 Route 53 → NLB → WAF → ALB로 유입됩니다.
@@ -55,6 +52,8 @@
   <img src="docs/software-architecture.png" alt="소프트웨어 아키텍처" width="900">
   <br><em>※ 소프트웨어 아키텍처 다이어그램 — 이미지 삽입 예정</em>
 </p>
+
+### 설명
 
 증권사의 채널계·계정계·체결계 분리를 참고해 **읽기/쓰기 책임을 분리(CQRS)** 했습니다.
 
@@ -106,6 +105,14 @@
   <br><em>※ 핵심 기술 구성(펜타곤) 다이어그램 — 이미지 삽입 예정</em>
 </p>
 
+매순간의 차별화된 핵심 기술 5가지입니다.
+
+1. **채널계 / 계정계 / 체결계 분리 하이브리드** — 증권사 표준 3계 분리를 AWS(채널계) ↔ 온프레미스(계정계·체결) 하이브리드로 구현하여, 정합성이 중요한 원장과 확장성이 중요한 채널을 분리 운영합니다.
+2. **이중화 + DR 기반 고가용성** — AZ 이중화·RDS/Redis 복제·DC1/DC2 Standby(Keepalived VIP)로 단일 장애점을 제거하고, 장애 상황에서도 무중단 운영을 유지합니다.
+3. **Kafka 이벤트 기반 비동기 연동** — 주문→체결→정산을 Kafka로 비동기 연결하고, At-least-once + 멱등 처리로 결합도를 낮추면서 무손실·중복 방지를 보장합니다.
+4. **CQRS 스냅샷 조회 모델** — 자산의 최종 정합성은 온프레미스 원장(쓰기)이, 조회는 Kafka로 동기화된 채널계 스냅샷(읽기)이 담당하여 조회 부하를 원장에서 격리합니다.
+5. **통합 관측성(Observability)** — Metric(Prometheus)·Log(Loki)·Trace(Jaeger)를 Grafana Alloy로 클라우드↔온프레미스 통합 수집하여 장애를 조기 탐지합니다.
+
 ### 3-2. 통합 워크플로우 다이어그램
 
 <p align="center">
@@ -122,12 +129,9 @@
 #### [기능 1] Kafka Consumer 멱등 처리 — 체결 이벤트 중복 반영 방지
 
 **기능 설명**
-체결·동기화 이벤트의 `eventId`를 처리 이력에 기록해, 이미 성공한 이벤트가 재전송돼도 중복 반영되지 않도록 했습니다.
+At-least-once 메시징에서는 지연·재시작·재시도로 동일 이벤트가 다시 전달될 수 있고, 중복 반영되면 잔고·포트폴리오 정합성이 깨집니다. 이를 막기 위해 체결·동기화 이벤트의 `eventId`를 처리 이력에 기록하고, 처리 여부 확인·동기화 작업·이력 기록을 **하나의 트랜잭션**으로 묶어 재전송에도 중복 반영되지 않도록 했습니다.
 
-**설계 의도**
-At-least-once 메시징에서는 지연·재시작·재시도로 동일 이벤트가 다시 전달될 수 있고, 중복 반영되면 잔고·포트폴리오 정합성이 깨집니다. 이를 막기 위해 `eventId` 처리 여부 확인과 동기화 작업·이력 기록을 **하나의 트랜잭션**으로 묶었습니다.
-
-**핵심 코드**
+**핵심 코드(스크립트)**
 
 ```java
 private SyncResult processEvent(String eventId, String eventType, String aggregateType,
@@ -150,19 +154,16 @@ private SyncResult processEvent(String eventId, String eventType, String aggrega
 }
 ```
 
-**코드 링크**: [TradeSyncService.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java#L594)
+**코드 링크(스크립트 링크)** : [TradeSyncService.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java#L594)
 
 ---
 
 #### [기능 2] Kafka Producer 전송 보장 — 주문 이벤트 무손실 발행
 
 **기능 설명**
-주문·취소 이벤트 발행 시 **브로커 ack를 동기적으로 대기**(`get(timeout)`)하고, 실패하면 예외를 던져 상위 보상 흐름(증거금 예약 해제)을 트리거합니다.
+발행이 유실되면 "채널계는 접수, 계정계는 모름"의 **채널-원장 불일치**가 생기고, 주문 1건도 유실되면 안 됩니다. 따라서 fire-and-forget 대신 **브로커 ack를 동기적으로 대기**(`get(timeout)`)하고, 실패하면 예외를 던져 상위 보상 흐름(증거금 예약 해제)을 트리거합니다.
 
-**설계 의도**
-발행이 유실되면 "채널계는 접수, 계정계는 모름"의 **채널-원장 불일치**가 생깁니다. 주문 1건도 유실되면 안 되므로 fire-and-forget 대신 ack 확인 후 실패 시 즉시 보상하도록 했습니다.
-
-**핵심 코드**
+**핵심 코드(스크립트)**
 
 ```java
 private void send(String topic, String key, Object event) {
@@ -177,19 +178,16 @@ private void send(String topic, String key, Object event) {
 }
 ```
 
-**코드 링크**: [OrderEventPublisher.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java)
+**코드 링크(스크립트 링크)** : [OrderEventPublisher.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java)
 
 ---
 
 #### [기능 3] 채널계 ↔ 계정계 Kafka 비동기 연동
 
 **기능 설명**
-채널계 `order-service`가 **주문 ID를 파티션 Key**로 토픽에 발행하면, VPN을 경유해 계정계 `execution-engine`이 소비하고 체결 결과를 다시 이벤트로 회신합니다.
+동기 호출로 결합하면 체결계 지연·장애가 사용자 응답 지연으로 직결됩니다. 이를 피하기 위해 채널계 `order-service`가 **주문 ID를 파티션 Key**로 토픽에 발행하면, VPN을 경유해 계정계 `execution-engine`이 소비하고 체결 결과를 다시 이벤트로 회신합니다. Kafka 비동기 연동으로 결합도를 낮춰 체결계가 지연돼도 주문 접수는 유지되며, 주문 ID Key로 동일 주문의 처리 순서를 보장합니다.
 
-**설계 의도**
-동기 호출로 결합하면 체결계 지연·장애가 사용자 응답 지연으로 직결됩니다. Kafka 비동기 연동으로 결합도를 낮춰 체결계가 지연돼도 주문 접수는 유지되며, **주문 ID Key**로 동일 주문의 처리 순서를 보장합니다.
-
-**핵심 코드**
+**핵심 코드(스크립트)**
 
 ```java
 // 채널계: 토픽 계약(KafkaTopics) — 채널↔계정 연동 인터페이스
@@ -210,19 +208,16 @@ public void listenOrderRequest(@Payload OrderRequestEvent event) {
 }
 ```
 
-**코드 링크**: [KafkaTopics.java](https://github.com/MaeSoonGan/Onpre-Back-End/blob/main/libs/event-contracts/src/main/java/com/maesungan/onprem/event/KafkaTopics.java) · [OrderEventPublisher.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java) · [OrderEventListener.java](https://github.com/MaeSoonGan/Onpre-Back-End/blob/main/apps/execution-engine/src/main/java/com/maesungan/onprem/execution/order/messaging/OrderEventListener.java)
+**코드 링크(스크립트 링크)** : [KafkaTopics.java](https://github.com/MaeSoonGan/Onpre-Back-End/blob/main/libs/event-contracts/src/main/java/com/maesungan/onprem/event/KafkaTopics.java) · [OrderEventPublisher.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java) · [OrderEventListener.java](https://github.com/MaeSoonGan/Onpre-Back-End/blob/main/apps/execution-engine/src/main/java/com/maesungan/onprem/execution/order/messaging/OrderEventListener.java)
 
 ---
 
 #### [기능 4] Redis Lua Script 기반 원자적 증거금(주문가능금액) 선점
 
 **기능 설명**
-동시 매수 주문에서도 **잔액 검증·차감을 하나의 Redis Lua Script로 원자 실행**해, 가용 금액을 초과한 과주문을 방지합니다.
+`GET`으로 확인 후 `DECR`로 차감하면 두 요청이 동시에 "잔액 충분"으로 판단하는 **경쟁 조건(race condition)** 이 생깁니다. 이를 막기 위해 동시 매수 주문에서도 **잔액 조회·비교·차감을 하나의 Redis Lua Script로 원자 실행**하여, 원장 처리 이전 단계인 채널계에서 증거금을 선점하고 가용 금액을 초과한 과주문을 차단합니다.
 
-**설계 의도**
-`GET`으로 확인 후 `DECR`로 차감하면 두 요청이 동시에 "잔액 충분"으로 판단하는 **경쟁 조건(race condition)** 이 생깁니다. 조회·비교·차감을 한 Lua Script로 묶어, 원장 처리 이전 단계인 채널계에서 증거금을 선점·차단했습니다.
-
-**핵심 코드**
+**핵심 코드(스크립트)**
 
 ```java
 private static final String RESERVE_SCRIPT = """
@@ -245,19 +240,16 @@ public ReserveResult reserve(long memberId, long contestId, BigDecimal amount) {
 }
 ```
 
-**코드 링크**: [BalanceCache.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java)
+**코드 링크(스크립트 링크)** : [BalanceCache.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java)
 
 ---
 
 #### [기능 5] Redis TTL 기반 주문 취소 예약 보상
 
 **기능 설명**
-취소 요청 직후 잔고를 바로 복구하지 않고 **반환 예정 금액을 TTL과 함께 Redis에 기록**, 계정계에서 취소가 확정될 때 Lua Script로 복원·pending 차감·키 정리를 원자 처리합니다.
+취소는 "요청 → Kafka → 계정계 확정"의 비동기 흐름이라 그 사이에 **시간 갭**이 있고, 미리 복구하면 미확정 금액이 재주문에 쓰여 정합성이 깨집니다. 따라서 취소 요청 직후 잔고를 바로 복구하지 않고 **반환 예정 금액을 TTL과 함께 Redis에 기록**해 보류했다가, 계정계에서 취소가 확정될 때 Lua Script로 복원·pending 차감·키 정리를 원자 처리합니다.
 
-**설계 의도**
-취소는 "요청 → Kafka → 계정계 확정"의 비동기 흐름이라 그 사이에 **시간 갭**이 있습니다. 미리 복구하면 미확정 금액이 재주문에 쓰여 정합성이 깨지므로, TTL로 보류했다가 확정 시점에만 정산합니다.
-
-**핵심 코드**
+**핵심 코드(스크립트)**
 
 ```java
 // ① 취소 요청 시: 반환 예정 금액을 TTL과 함께 pending으로 기록 (즉시 복구 X)
@@ -289,6 +281,6 @@ redis.call('DEL', KEYS[3])
 return 1
 ```
 
-**코드 링크**: [BalanceCache.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java) · [TradeSyncService.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java)
+**코드 링크(스크립트 링크)** : [BalanceCache.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java) · [TradeSyncService.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java)
 
 ---
