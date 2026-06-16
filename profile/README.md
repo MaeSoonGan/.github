@@ -34,8 +34,7 @@
 ### 2-1. 시스템 아키텍처
 
 <p align="center">
-  <img src="docs/system-architecture.png" alt="시스템 아키텍처" width="900">
-  <br><em>※ 시스템 아키텍처 다이어그램 — 이미지 삽입 예정</em>
+  <img width="2850" height="1780" alt="최종_전체_아키텍처" src="https://github.com/user-attachments/assets/89a51d35-79e8-4cfe-9f3a-c0aabf563187" />
 </p>
 
 매순간은 AWS 클라우드와 온프레미스를 **Site-to-Site VPN**으로 연결한 하이브리드 구조입니다.
