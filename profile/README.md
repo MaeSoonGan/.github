@@ -255,19 +255,3 @@ return 1
 **코드 링크**: [BalanceCache.java](Back-End/Back-End/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java) · [TradeSyncService.java](Back-End/Back-End/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java)
 
 ---
-
-## 부록: 빌드 & 실행
-
-```bash
-# 채널계 (Back-End)
-cd Back-End/Back-End && ./gradlew :apps:api:order-service:bootRun
-
-# 계정계 (Onpre-Back-End)
-cd Onpre-Back-End/Onpre-Back-End && ./gradlew :apps:execution-engine:bootJar :apps:ledger-service:bootJar
-
-# 프론트엔드
-cd Front-End/Front-End && npm install && npm run dev
-
-# 인프라 (IaC)
-cd IaC/IaC && terraform init && terraform plan && terraform apply
-```
