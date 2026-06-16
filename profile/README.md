@@ -1,33 +1,23 @@
-# [우리FISA 6기] 클라우드 엔지니어링 1팀 — 매순간(MaeSoonGan)
-
-> **장애 상황에서도 멈추지 않는** 고가용성 모의투자 거래 플랫폼
->
-> EKS 오토스케일링 · 인프라 이중화 · DR 서버로 무중단 운영을 지향하며, 증권사 표준 **채널계 / 계정계 / 체결계 분리**를 <br>**AWS 클라우드 ↔ 온프레미스 하이브리드**로 구현
-
----
+# [우리FISA 6기] 클라우드 엔지니어링 1팀 - 매순간(MaeSoonGan)
 
 ## 1. 프로젝트 개요
 
-- **주제** : 한국투자증권 Open API의 실시간 시세로 가상 자산을 매매하고 모의투자 대회로 수익률을 겨루는 모의투자 거래 플랫폼입니다. 실제 증권사의 **채널계 / 계정계 / 체결계 분리 구조**를 클라우드 ↔ 온프레미스 하이브리드로 구현하고, **장애 상황에서도 멈추지 않는 고가용성** 확보를 최우선 목표로 설계했습니다.
+- **주제:** 클라우드 기반 고가용성 인프라 환경의 모의투자 대회 플랫폼
+- **프로젝트 기획 배경:** 증권 서비스는 짧은 장애나 응답 지연만으로도 주문 실패, 체결 지연, 자산 정보 불일치가 발생할 수 있어 **높은 안정성**이 요구됩니다. 특히 모의투자 대회 서비스는 다수 사용자의 동시 주문과 실시간 랭킹 확인이 이루어지므로, **트래픽 증가와 서버 장애에 대비한 고가용성** 인프라가 필요합니다.또한 Main 서버 장애가 장기화될 경우 대회 현황, 주문 내역, 보유 자산 조회가 중단될 수 있으므로, **Veeam 기반 DR 서버 복구** 구조를 통해 핵심 서비스를 빠르게 재개하고 서비스 연속성을 확보하고자 했습니다.
+- **기술 스택:**
 
-- **프로젝트 기획 배경** : 증권 서비스는 장 운영 중 단 몇 분의 장애도 큰 손실로 이어지므로, **"장애가 발생해도 멈추지 않는"** 고가용성이 핵심 과제입니다. 이를 위해 다음과 같이 설계했습니다.
-  - **오토스케일링** — 채널계(AWS EKS)는 장 개장·마감 트래픽 급증에 EKS 오토스케일링으로 탄력 대응
-  - **이중화** — AZ 이중화, RDS Primary/Replica, Redis Multi-AZ, NAT/로드밸런서 이중화로 단일 장애점 제거
-  - **DR** — 계정계(온프레미스)는 DC1 Active / DC2 Standby + Keepalived VIP + DB 복제로 데이터센터 장애 시에도 서비스 연속성 유지
-
-- **기술 스택** :
-
-| 영역                    | 기술                                                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| **Backend**       | Java 17, Spring Boot (Gradle 멀티모듈 모노레포), Spring Security + JWT                                            |
-| **Data**          | MySQL / MariaDB (온프레 Master·Slave, AWS RDS Replica), Redis (ElastiCache, 온프레 Redis Sentinel), Apache Kafka |
-| **External**      | 한국투자증권 Open API, WebSocket                                                                                  |
-| **Cloud (AWS)**   | EKS, RDS, ElastiCache, ECR, ALB/NLB, WAF, Route 53, S3                                                            |
-| **On-Premise**    | VMware ESXi / vCenter, Rocky Linux 9, Docker Compose, Keepalived, pfSense (Site-to-Site VPN 종단)                 |
-| **IaC / CI·CD**  | Terraform, GitHub Actions, GitLab CE + ArgoCD + Argo Rollouts                                                     |
-| **Observability** | Prometheus, Grafana, Loki, Jaeger, Grafana Alloy, OpenTelemetry                                                   |
-
----
+    | 영역                         | 기술                                                        |
+    | -------------------------- | --------------------------------------------------------- |
+    | **Frontend**               | React, JavaScript                                         |
+    | **Backend**                | Java, Spring Boot                                         |
+    | **Database**               | MariaDB, Redis                                            |
+    | **Message Queue**          | Kafka                                                     |
+    | **Cloud & Container**      | AWS EKS, ECR, ALB, WAF, Route53, Docker, Kubernetes       |
+    | **On-Prem Infrastructure** | VMware ESXi, vSphere, Ubuntu, Rocky Linux                 |
+    | **Network**                | VyOS, pfSense, VPN Site-to-Site                           |
+    | **CI/CD & IaC**            | GitHub, Jenkins, ArgoCD, Terraform, Ansible, Shell Script |
+    | **Observability**          | Prometheus, Grafana, Loki, Tempo, Alloy, Alertmanager     |
+    | **DR**                     | Veeam Backup & Replication                                |
 
 ## 2. 아키텍처
 
@@ -39,186 +29,231 @@
 
 ### 설명
 
-매순간은 AWS 클라우드와 온프레미스를 **Site-to-Site VPN**으로 연결한 하이브리드 구조입니다.
+본 시스템은 **AWS 클라우드**와 **On-Premise 환경**을 **Site-to-Site VPN**으로 연결한 **하이브리드 클라우드 기반 고가용성 인프라 구조**입니다. 사용자의 요청은 **Route53, WAF, ALB를 거쳐 AWS EKS 클러스터**의 사용자 서비스, 관리자 서비스, 실시간 시세 서비스, 비동기 처리 서비스로 전달되며, 각 서비스는 **Kubernetes 기반 Pod로 분산 배치**되어 안정적인 서비스 운영과 확장성을 확보합니다.
 
-- **채널계 (AWS EKS)**: 회원·시세·주문·거래·자산·알림·실시간 시세·사용자 실시간 이벤트를 서비스별 Pod로 배치. 외부 트래픽은 Route 53 → NLB → WAF → ALB로 유입됩니다.
-- **계정계·체결 (온프레미스)**: 원장 DB와 체결 엔진을 배치하고, DC1/DC2 이중화·DB 복제로 장애 복구 체계를 구성했습니다.
-- **연동**: 비동기 연동(주문·체결)은 VPN 경유 Kafka로, 일부 동기 요청(회원)은 HTTP API로 처리합니다.
-- **모니터링**: EKS 지표를 Grafana Alloy가 수집해 온프레미스 Prometheus로 `remote_write`하고 Grafana에서 통합 조회합니다.
+AWS 내부에는 M**ariaDB와 Redis를 Primary/Replica 구조로 구성**하여 데이터 저장과 캐시 처리를 지원하고, **S3와 CloudWatch를 통해 파일 저장 및 클라우드 리소스 모니터링**을 수행합니다. On-Premise 영역에는 원장 서버, 체결 엔진, Kafka로 구성된 **Core Cluster**와 Master/Slave **DB Cluster**를 배치하여 주문 검증, 체결 처리, 이벤트 기반 데이터 처리를 담당합니다.
+
+또한 Main 서버 장애에 대비하여 **DR Cluster**를 별도로 구성하고, **Veeam 기반 복제 및 복구 구조**를 통해 장애 발생 시 핵심 서비스를 빠르게 재개할 수 있도록 설계했습니다. Monitoring 서버에는 Prometheus, Alertmanager, Grafana, Loki, Jaeger 등을 구성하여 **AWS와 On-Premise 서버의 Metric, Log, Trace를 수집하고 시각화**하며, **장애 발생 시 알림**을 통해 운영자가 신속하게 대응할 수 있도록 지원합니다.
+
 
 ### 2-2. 소프트웨어 아키텍처
 
-<p align="center">
-  <img src="docs/software-architecture.png" alt="소프트웨어 아키텍처" width="900">
-  <br><em>※ 소프트웨어 아키텍처 다이어그램 — 이미지 삽입 예정</em>
-</p>
+<img width="1920" height="1080" alt="소프트웨어아키텍처" src="https://github.com/user-attachments/assets/06244c31-0078-49ac-8b9c-8458b035a203" />
+
 
 ### 설명
 
-증권사의 채널계·계정계·체결계 분리를 참고해 **읽기/쓰기 책임을 분리(CQRS)** 했습니다.
+해당 아키텍처는 **Front-End부터 Database 및 External Interface**까지 계층적으로 구성된 Layered 구조로, 각 레이어가 역할에 따라 분리되어 있습니다. 사용자의 요청은 React 기반 Presentation Layer에서 시작되어 API/Gateway Layer를 거쳐 Controller, Service, Domain/Component, Persistence/Integration Layer로 순차적으로 전달되며, 회원, 주문, 계좌, 대회, 랭킹, 알림 등의 비즈니스 로직이 처리됩니다.
 
-- **계정계(원장)** 가 자산의 최종 정합성(잔고·보유·체결)을 관리하고, **채널계**는 Kafka로 동기화된 **스냅샷**(주문·포트폴리오)으로 조회를 처리합니다.
-- **체결계**는 Order Book 기반으로 주문을 매칭해 결과를 Kafka로 발행합니다.
-- → 조회가 집중되는 채널계는 **수평 확장**, 정합성이 중요한 원장은 온프레미스에서 **일관성 있게 운영**합니다. (서비스별 책임은 아래 MSA 표 참고)
+또한 On-Prem 원장 시스템, 체결 엔진, Kafka와 연동되는 **Domain/Component 영역**을 별도로 구성하여 **핵심 거래 처리 로직을 분리**하고, Persistence/Integration Layer에서 MariaDB, Redis, Kafka Topic, Private API, Slack Webhook 등 외부 시스템과의 연결을 담당하도록 설계했습니다. 이를 통해 서비스 기능의 확장성과 유지보수성을 높이고, 각 기능 간 의존도를 낮춘 구조를 구현했습니다.
 
-#### 마이크로서비스 구성 (MSA)
+운영 측면에서는 AWS EKS, On-Prem Private, DB/Cache, CI/CD, Observability 영역을 별도로 표현하여 **애플리케이션 계층과 인프라 운영 구성을 구분**했습니다. Prometheus, Grafana, Loki, Tempo, Alloy, Alertmanager를 활용한 Metric, Log, Trace 수집 및 알림 구조를 통해 **서비스 상태를 관측하고 장애 대응이 가능**하도록 설계했습니다.
 
-채널계와 계정계 모두 **도메인별 독립 마이크로서비스**로 분해했습니다. Gradle 멀티모듈 모노레포로 관리하되 배포는 **서비스 단위 컨테이너**로 이루어져, 서비스별 독립 배포·확장·장애 격리가 가능합니다. EKS에서는 워크로드 성격별 노드그룹으로 격리 배치하여, 트래픽이 몰리는 서비스(예: 실시간 시세)만 선택적으로 스케일아웃합니다.
-
-**채널계 (AWS EKS)**
-
-| 서비스                      | 책임                                                   |
-| --------------------------- | ------------------------------------------------------ |
-| `auth-service`            | 회원가입·로그인·JWT 발급/재발급·이메일 인증         |
-| `admin-service`           | 회원·대회·공지·시스템 관리, 대회 랭킹 스케줄러      |
-| `contest-service`         | 모의투자 대회 조회·참가·탈퇴·랭킹                   |
-| `market-service`          | 종목·차트·지수·관심종목, KIS 시세 스냅샷            |
-| `order-service`           | 주문 접수·취소, 포트폴리오, 증거금(주문가능금액) 예약 |
-| `notification-api`        | 알림·공지 발행/조회, 시세 알림 스케줄러               |
-| `market-realtime-service` | KIS 실시간 시세 수집 → Redis 캐싱 → WebSocket 송출   |
-| `user-realtime-service`   | 사용자별 실시간 이벤트 푸시(SSE)                       |
-| `trade-sync-worker`       | Kafka 이벤트 소비 → 채널 DB 동기화(Read-Model)        |
-
-**계정계 (On-Premises)**
-
-| 서비스               | 책임                                                               |
-| -------------------- | ------------------------------------------------------------------ |
-| `execution-engine` | 주문 수신·상태 관리, 시장가/지정가 체결(매칭), 부분체결, 자동취소 |
-| `ledger-service`   | 계좌 원장·잔고·보유종목·거래내역·손익(PnL), EOD 마감·대사     |
-| `member-service`   | 회원 자격증명(비밀번호) 관리, 보안 명령 처리                       |
-
-**MSA 채택 이유**
-
-- **독립 배포** — 서비스별로 배포(GitOps)하여 장애 시 영향 범위 최소화
-- **독립 확장** — 실시간 시세·주문 등 부하 큰 서비스만 선택적으로 스케일
-- **장애 격리** — 한 서비스 장애가 전체로 전파되지 않음
-- **느슨한 결합** — Kafka 이벤트 기반 비동기 연동으로 서비스 간 의존도 최소화
-
----
 
 ## 3. 주요 기능 소개
 
 ### 3-1. 핵심 기술 구성
 
-<p align="center">
-  <img src="docs/core-features-pentagon.png" alt="핵심 기술 구성" width="800">
-  <br><em>※ 핵심 기술 구성(펜타곤) 다이어그램 — 이미지 삽입 예정</em>
-</p>
-
-매순간의 차별화된 핵심 기술 5가지입니다.
-
-1. **채널계 / 계정계 / 체결계 분리 하이브리드** — 증권사 표준 3계 분리를 AWS(채널계) ↔ 온프레미스(계정계·체결) 하이브리드로 구현하여, 정합성이 중요한 원장과 확장성이 중요한 채널을 분리 운영합니다.
-2. **이중화 + DR 기반 고가용성** — AZ 이중화·RDS/Redis 복제·DC1/DC2 Standby(Keepalived VIP)로 단일 장애점을 제거하고, 장애 상황에서도 무중단 운영을 유지합니다.
-3. **Kafka 이벤트 기반 비동기 연동** — 주문→체결→정산을 Kafka로 비동기 연결하고, At-least-once + 멱등 처리로 결합도를 낮추면서 무손실·중복 방지를 보장합니다.
-4. **CQRS 스냅샷 조회 모델** — 자산의 최종 정합성은 온프레미스 원장(쓰기)이, 조회는 Kafka로 동기화된 채널계 스냅샷(읽기)이 담당하여 조회 부하를 원장에서 격리합니다.
-5. **통합 관측성(Observability)** — Metric(Prometheus)·Log(Loki)·Trace(Jaeger)를 Grafana Alloy로 클라우드↔온프레미스 통합 수집하여 장애를 조기 탐지합니다.
+<img width="1676" height="939" alt="핵심기술이미지" src="https://github.com/user-attachments/assets/386132fd-7a89-4c1a-8707-bd78084eff59" />
 
 ### 3-2. 통합 워크플로우 다이어그램
 
-<p align="center">
-  <img src="docs/workflow-diagram.png" alt="통합 워크플로우" width="900">
-  <br><em>※ 통합 워크플로우 다이어그램 — 이미지 삽입 예정</em>
-</p>
+<img width="1672" height="941" alt="통합워크플로우다이어그램" src="https://github.com/user-attachments/assets/c7555c4e-1c7b-46c4-85e1-cf5ed5b047f9" />
+
 
 ### 3-3. 세부 기능 소개
 
-> 매순간은 **Redis · Kafka 미들웨어로 증권 거래의 정합성·신뢰성 문제를 해결**하는 데 중점을 두었습니다. 아래 5개 세부 기능은 그 핵심 구현입니다.
+#### [기능 1] AWS EKS 기반 오토스케일링 및 안정적인 서비스 운영
 
----
+- **기능 설명:**
+사용자 접속 증가나 주문 요청 증가 상황에서도 서비스가 안정적으로 동작할 수 있도록 AWS EKS 기반 Kubernetes 환경에 주요 API 서비스를 배포했습니다. HPA를 통해 Pod 리소스 사용량에 따라 자동 확장되도록 구성하고, ALB와 Ingress를 통해 외부 요청을 각 서비스로 전달하여 트래픽 증가 상황에 대응할 수 있도록 했습니다.
 
-#### [기능 1] Kafka Consumer 멱등 처리 — 체결 이벤트 중복 반영 방지
+- **핵심 코드(스크립트):**
+```YAML
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: maesoongan-ingress
+  namespace: maesoongan
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+spec:
+  rules:
+    - host: maesoongan.xyz
+      http:
+        paths:
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8080
 
-**기능 설명**
-At-least-once 메시징에서는 지연·재시작·재시도로 동일 이벤트가 다시 전달될 수 있고, 중복 반영되면 잔고·포트폴리오 정합성이 깨집니다. 이를 막기 위해 체결·동기화 이벤트의 `eventId`를 처리 이력에 기록하고, 처리 여부 확인·동기화 작업·이력 기록을 **하나의 트랜잭션**으로 묶어 재전송에도 중복 반영되지 않도록 했습니다.
+          - path: /api/orders
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 8080
 
-**핵심 코드(스크립트)**
+          - path: /api/contests
+            pathType: Prefix
+            backend:
+              service:
+                name: contest-service
+                port:
+                  number: 8080
 
-```java
-private SyncResult processEvent(String eventId, String eventType, String aggregateType,
-                                String aggregateId, Runnable action) {
-    if ("SUCCESS".equals(findProcessStatus(eventId))) {                       // 멱등: 이미 처리 시 SKIP
-        return new SyncResult(eventId, eventType, aggregateType, aggregateId,
-                "SKIPPED", "Already processed event", LocalDateTime.now());
-    }
-    try {
-        transactionTemplate.executeWithoutResult(status -> {
-            action.run();                                                     // 스냅샷 동기화
-            upsertSyncEventLog(eventId, eventType, aggregateType, aggregateId, // 처리 이력 기록
-                    "SUCCESS", null, LocalDateTime.now());
-        });
-        return new SyncResult(eventId, eventType, aggregateType, aggregateId, "SUCCESS", "Sync completed", ...);
-    } catch (RuntimeException exception) {
-        upsertSyncEventLog(eventId, eventType, aggregateType, aggregateId, "FAILED", truncate(exception.getMessage()), ...);
-        throw exception;
-    }
-}
+          - path: /api/markets
+            pathType: Prefix
+            backend:
+              service:
+                name: market-service
+                port:
+                  number: 8080
 ```
 
-**코드 링크(스크립트 링크)** : [TradeSyncService.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java#L594)
+- **코드 링크(스크립트 링크):**
+[maesoongan-ingress.yaml](https://github.com/user-attachments/files/29013803/maesoongan-ingress.yaml)
+
+
+
 
 ---
 
-#### [기능 2] Kafka Producer 전송 보장 — 주문 이벤트 무손실 발행
+#### [기능 2] GitHub · Jenkins · ArgoCD 기반 CI/CD 자동 배포
 
-**기능 설명**
-발행이 유실되면 "채널계는 접수, 계정계는 모름"의 **채널-원장 불일치**가 생기고, 주문 1건도 유실되면 안 됩니다. 따라서 fire-and-forget 대신 **브로커 ack를 동기적으로 대기**(`get(timeout)`)하고, 실패하면 예외를 던져 상위 보상 흐름(증거금 예약 해제)을 트리거합니다.
+- **기능 설명:**
+코드 변경 후 수동 배포 과정에서 발생할 수 있는 오류를 줄이기 위해 GitHub, Jenkins, Docker, ECR, ArgoCD를 연계한 배포 자동화 구조를 구성했습니다. Jenkins는 애플리케이션 빌드와 Docker 이미지 생성을 수행하고, ArgoCD는 GitOps 방식으로 Kubernetes 클러스터의 배포 상태를 관리하여 배포 일관성을 확보했습니다.
 
-**핵심 코드(스크립트)**
+- **핵심 코드(스크립트):**
+```Dockerfile
+FROM node:22-alpine AS build
 
-```java
-private void send(String topic, String key, Object event) {
-    if (!kafkaEnabled) { log.warn("Kafka disabled. Skip publish. topic={}, key={}", topic, key); return; }
-    try {
-        kafkaTemplate.send(topic, key, event)
-                .get(sendTimeout.toMillis(), TimeUnit.MILLISECONDS);          // 브로커 ack 동기 대기
-    } catch (Exception exception) {
-        throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR,
-                "KAFKA_PUBLISH_FAILED", "Failed to publish order event.");    // 실패 → 보상 트리거
-    }
-}
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+ARG VITE_API_BASE_URL=""
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+RUN npx vite build
+
+FROM nginx:1.27-alpine
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
 ```
 
-**코드 링크(스크립트 링크)** : [OrderEventPublisher.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java)
+- **코드 링크(스크립트 링크):**
+[frontend-deploy-files.zip](https://github.com/user-attachments/files/29012371/frontend-deploy-files.zip)
 
 ---
 
-#### [기능 3] 채널계 ↔ 계정계 Kafka 비동기 연동
+#### [기능 3] Observability 기반 장애 감지 및 Slack 알림
 
-**기능 설명**
-동기 호출로 결합하면 체결계 지연·장애가 사용자 응답 지연으로 직결됩니다. 이를 피하기 위해 채널계 `order-service`가 **주문 ID를 파티션 Key**로 토픽에 발행하면, VPN을 경유해 계정계 `execution-engine`이 소비하고 체결 결과를 다시 이벤트로 회신합니다. Kafka 비동기 연동으로 결합도를 낮춰 체결계가 지연돼도 주문 접수는 유지되며, 주문 ID Key로 동일 주문의 처리 순서를 보장합니다.
+- **기능 설명:**
+장애 발생 시 운영자가 빠르게 상태를 파악할 수 있도록 Prometheus, Grafana, Loki, Tempo, Alloy, Alertmanager 기반 Observability 환경을 구성했습니다. 서버와 애플리케이션의 Metric, Log, Trace를 수집하고 Grafana에서 시각화하며, 장애 조건이 감지되면 Alertmanager를 통해 Slack으로 알림을 전송하도록 구성했습니다.
 
-**핵심 코드(스크립트)**
+- **핵심 코드(스크립트):**
+```YAML
+route:
+  receiver: slack-warning
+  group_by:
+    - alertname
+    - area
+    - host
+    - service
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 1h
 
-```java
-// 채널계: 토픽 계약(KafkaTopics) — 채널↔계정 연동 인터페이스
-public static final String ORDER_REQUEST = "order.request";
-public static final String ORDER_CANCEL  = "order.cancel";
-public static final String EXECUTION_RESULT    = "execution.result";
-public static final String EXECUTION_CONFIRMED = "execution.confirmed";
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: slack-critical
+      continue: false
 
-// 채널계: 주문 ID를 Key로 발행 → 동일 주문 순서 보장
-public void publishOrderRequested(OrderRequestedEvent event) {
-    send(orderRequestTopic, String.valueOf(event.orderId()), event);
-}
+    - matchers:
+        - severity="warning"
+      receiver: slack-warning
+      continue: false
 
-// 계정계(온프레): VPN 경유 Kafka 소비 → 체결 처리
-@KafkaListener(topics = KafkaTopics.ORDER_REQUEST, groupId = "${spring.kafka.consumer.group-id}")
-public void listenOrderRequest(@Payload OrderRequestEvent event) {
-    orderEventProcessingService.processOrderRequest(event);
-}
+inhibit_rules:
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal:
+      - alertname
+      - area
+      - host
+      - service
+
 ```
 
-**코드 링크(스크립트 링크)** : [KafkaTopics.java](https://github.com/MaeSoonGan/Onpre-Back-End/blob/main/libs/event-contracts/src/main/java/com/maesungan/onprem/event/KafkaTopics.java) · [OrderEventPublisher.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/OrderEventPublisher.java) · [OrderEventListener.java](https://github.com/MaeSoonGan/Onpre-Back-End/blob/main/apps/execution-engine/src/main/java/com/maesungan/onprem/execution/order/messaging/OrderEventListener.java)
+- **코드 링크(스크립트 링크):**
+[observability-configs.zip](https://github.com/user-attachments/files/29012838/observability-configs.zip)
 
 ---
 
-#### [기능 4] Redis Lua Script 기반 원자적 증거금(주문가능금액) 선점
+#### [기능 4] Veeam 기반 DR 서버 복구 및 서비스 재개
 
-**기능 설명**
-`GET`으로 확인 후 `DECR`로 차감하면 두 요청이 동시에 "잔액 충분"으로 판단하는 **경쟁 조건(race condition)** 이 생깁니다. 이를 막기 위해 동시 매수 주문에서도 **잔액 조회·비교·차감을 하나의 Redis Lua Script로 원자 실행**하여, 원장 처리 이전 단계인 채널계에서 증거금을 선점하고 가용 금액을 초과한 과주문을 차단합니다.
+- **기능 설명:**
+Main 서버 장애가 장기화될 경우에도 핵심 서비스를 빠르게 재개할 수 있도록 Veeam 기반 백업 및 DR 복구 구조를 구성했습니다. Main 서버의 VM 백업을 기반으로 DR 서버를 복구하고, 복구 이후 서비스 상태와 모니터링 수집 설정을 점검하여 장애 상황에서도 서비스 연속성을 확보할 수 있도록 했습니다.
 
-**핵심 코드(스크립트)**
+- **핵심 코드(스크립트):**
+```ps1
+$parts = @(
+    'set -e;',
+    'CONN=$(nmcli -t -f NAME,DEVICE con show --active | grep -v ":lo$" | head -n1 | cut -d: -f1);',
+    'test -n "$CONN" || { echo "No active NetworkManager connection found"; nmcli -t -f NAME,DEVICE con show --active; exit 1; };',
+    'echo "=== Before ===";',
+    'ip -br addr;',
+    'ip route;',
+    'hostname;',
+    'sudo -n hostnamectl set-hostname "' + $NewHostname + '";',
+    'sudo -n nmcli con mod "$CONN" ipv4.addresses "' + $IpCidr + '" ipv4.gateway "' + $Gateway + '" ipv4.dns "' + $Dns + '" ipv4.method manual;',
+    'sudo -n nmcli con up "$CONN";',
+    'echo "=== After ===";',
+    'ip -br addr;',
+    'ip route;',
+    'hostname;'
+)
 
+$bash = ($parts -join ' ')
+
+$result = Invoke-VMScript `
+    -VM $vm `
+    -GuestCredential $guestCred `
+    -ScriptType Bash `
+    -ScriptText $bash `
+    -ToolsWaitSecs 180
+```
+
+
+- **코드 링크(스크립트 링크):**
+[Veeam_VM_IP바꾸는스크립트.zip](https://github.com/user-attachments/files/29013033/Veeam_VM_IP.zip)
+
+
+---
+
+#### [기능 5] Kafka·Redis 기반 거래 정합성 보장
+
+- **기능 설명:**
+주문, 체결, 알림, 랭킹 갱신 과정에서 데이터 정합성이 깨지지 않도록 Kafka와 Redis를 활용했습니다. Kafka는 주문 요청과 체결 결과를 비동기 이벤트로 전달하여 채널계와 계정계 간 결합도를 낮추고, Consumer 멱등 처리를 통해 동일 이벤트가 재전송되어도 중복 반영되지 않도록 했습니다. 또한 Redis Lua Script를 활용해 증거금 선점과 취소 보상을 원자적으로 처리하여 동시 주문 상황에서도 잔고 불일치를 방지했습니다.
+
+- **핵심 코드(스크립트):**
 ```java
 private static final String RESERVE_SCRIPT = """
         local balance = redis.call('GET', KEYS[1])
@@ -240,47 +275,73 @@ public ReserveResult reserve(long memberId, long contestId, BigDecimal amount) {
 }
 ```
 
-**코드 링크(스크립트 링크)** : [BalanceCache.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java)
+- **코드 링크(스크립트 링크):**
+[BalanceCache.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java)
 
 ---
 
-#### [기능 5] Redis TTL 기반 주문 취소 예약 보상
+#### [기능 6] On-Prem 클러스터링 및 HA/FT 기반 서버 이중화
 
-**기능 설명**
-취소는 "요청 → Kafka → 계정계 확정"의 비동기 흐름이라 그 사이에 **시간 갭**이 있고, 미리 복구하면 미확정 금액이 재주문에 쓰여 정합성이 깨집니다. 따라서 취소 요청 직후 잔고를 바로 복구하지 않고 **반환 예정 금액을 TTL과 함께 Redis에 기록**해 보류했다가, 계정계에서 취소가 확정될 때 Lua Script로 복원·pending 차감·키 정리를 원자 처리합니다.
+- **기능 설명:**
+On-Premise 환경에서 단일 서버 장애로 인해 핵심 거래 시스템이 중단되지 않도록 클러스터링 및 HA/FT 기반 이중화 구조를 구성했습니다. Main 서버, 원장 시스템, 체결 엔진 등 주요 구성 요소가 장애 상황에서도 복구 가능하도록 설계하고, 서버 장애 발생 시 대체 자원으로 전환될 수 있는 구조를 마련했습니다. 이를 통해 온프레미스 내부 장애에 대한 복원력을 높이고 안정적인 운영 기반을 확보했습니다.
 
-**핵심 코드(스크립트)**
+- **핵심 코드(스크립트):**
+```shell script
+#!/bin/bash
+# Orchestrator PostFailover 훅 — 신 master에서 실행할 후처리
+# 인자: $1 = 신 master host, $2 = 신 master port
 
-```java
-// ① 취소 요청 시: 반환 예정 금액을 TTL과 함께 pending으로 기록 (즉시 복구 X)
-public void markCancelPending(long memberId, long contestId, long orderId, BigDecimal pendingAmount, Duration ttl) {
-    redisTemplate.opsForValue().set("cancel:pending:" + orderId, "true", ttl);
-    if (pendingAmount.compareTo(BigDecimal.ZERO) > 0) {
-        String key = pendingReleaseKey(memberId, contestId);
-        redisTemplate.opsForValue().increment(key, pendingAmount.doubleValue());
-        redisTemplate.expire(key, ttl);
-    }
-}
+NEW_MASTER_HOST="$1"
+NEW_MASTER_PORT="$2"
+CNF="/etc/orchestrator-mysql.cnf"
+LOG="/tmp/recovery.log"
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') post-failover START on ${NEW_MASTER_HOST}:${NEW_MASTER_PORT}" >> "$LOG"
+
+# 1) 신 master semi-sync source 재활성화 (토글로 내부 동작 깨우기)
+mysql --defaults-extra-file="$CNF" -h"$NEW_MASTER_HOST" -P"$NEW_MASTER_PORT" \
+  -e "SET GLOBAL rpl_semi_sync_source_enabled=OFF; SET GLOBAL rpl_semi_sync_source_enabled=ON; SET GLOBAL rpl_semi_sync_source_timeout=10000;" \
+  >> "$LOG" 2>&1
+
+if [ $? -eq 0 ]; then
+  echo "$(date '+%Y-%m-%d %H:%M:%S') semi-sync source re-enabled on ${NEW_MASTER_HOST}" >> "$LOG"
+else
+  echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: semi-sync toggle failed on ${NEW_MASTER_HOST}" >> "$LOG"
+fi
+
+# --- 향후 확장 지점 ---
+# 2) ProxySQL writer 호스트그룹 전환 (ProxySQL 도입 후)
+# 3) DNS 레코드 갱신 (nsupdate, DR 단계에서)
+# 4) 정합성 동기화 API 호출 (채널계 RDS/Redis 재구성)
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') post-failover DONE on ${NEW_MASTER_HOST}:${NEW_MASTER_PORT}" >> "$LOG"
 ```
 
-```lua
--- ② 취소 확정 시: 예약 복원 · pending 차감 · 키 정리를 원자적으로 처리
-local balance = redis.call('GET', KEYS[1])
-if tonumber(ARGV[1]) > 0 and balance then
-    redis.call('INCRBYFLOAT', KEYS[1], ARGV[1])                 -- 잔고 복원
-end
-if tonumber(ARGV[2]) > 0 then
-    local pending = redis.call('GET', KEYS[2])
-    if pending then
-        local nextPending = tonumber(pending) - tonumber(ARGV[2])
-        if nextPending > 0 then redis.call('SET', KEYS[2], tostring(nextPending))
-        else redis.call('DEL', KEYS[2]) end
-    end
-end
-redis.call('DEL', KEYS[3])
-return 1
-```
-
-**코드 링크(스크립트 링크)** : [BalanceCache.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/api/order-service/src/main/java/com/mock/maesoongan/orderservice/order/BalanceCache.java) · [TradeSyncService.java](https://github.com/MaeSoonGan/Back-End/blob/develop/apps/worker/trade-sync-worker/src/main/java/com/mock/maesoongan/tradesyncworker/sync/TradeSyncService.java)
+- **코드 링크(스크립트 링크):**
+[orch-post-failover.sh](https://github.com/user-attachments/files/29013191/orch-post-failover.sh)
 
 ---
+
+#### [기능 7] Site-to-Site VPN 기반 AWS · On-Prem 연동
+
+- **기능 설명:**
+AWS EKS에서 동작하는 사용자 서비스와 On-Premise의 원장·체결 시스템이 안전하게 통신할 수 있도록 Site-to-Site VPN 기반 하이브리드 네트워크를 구성했습니다. AWS VPC와 On-Prem 네트워크 간 라우팅을 설정하고, 보안 그룹 및 방화벽 정책을 통해 필요한 트래픽만 허용하여 클라우드 서비스와 내부 핵심 시스템이 분리된 상태에서도 연동될 수 있도록 했습니다.
+
+- **핵심 코드(스크립트):**
+```bash
+configure
+
+set protocols static route 0.0.0.0/0 next-hop 10.6.10.2
+set protocols static route 10.4.0.0/16 next-hop 10.3.0.1
+set protocols static route 10.5.0.0/16 next-hop 10.3.0.2
+set protocols static route 10.14.0.0/16 next-hop 10.6.10.2
+
+commit
+save
+exit
+```
+
+- **코드 링크(스크립트 링크):**
+[vyos-static-routes.sh](https://github.com/user-attachments/files/29013389/vyos-static-routes.sh)
+
+
