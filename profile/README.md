@@ -119,48 +119,11 @@ spec:
 ```
 
 - **코드 링크(스크립트 링크):**
-[maesoongan-ingress.yaml](https://github.com/user-attachments/files/29013803/maesoongan-ingress.yaml)
-
-
-
+[maesoongan-ingress.yaml](https://github.com/user-attachments/files/29013803/maesoongan-ingress.yaml), [frontend-deploy-files.zip](https://github.com/user-attachments/files/29012371/frontend-deploy-files.zip)
 
 ---
 
-#### [기능 2] GitHub · Jenkins · ArgoCD 기반 CI/CD 자동 배포
-
-- **기능 설명:**
-코드 변경 후 수동 배포 과정에서 발생할 수 있는 오류를 줄이기 위해 GitHub, Jenkins, Docker, ECR, ArgoCD를 연계한 배포 자동화 구조를 구성했습니다. Jenkins는 애플리케이션 빌드와 Docker 이미지 생성을 수행하고, ArgoCD는 GitOps 방식으로 Kubernetes 클러스터의 배포 상태를 관리하여 배포 일관성을 확보했습니다.
-
-- **핵심 코드(스크립트):**
-```Dockerfile
-FROM node:22-alpine AS build
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci
-
-COPY . .
-ARG VITE_API_BASE_URL=""
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-RUN npx vite build
-
-FROM nginx:1.27-alpine
-
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist /usr/share/nginx/html
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
-```
-
-- **코드 링크(스크립트 링크):**
-[frontend-deploy-files.zip](https://github.com/user-attachments/files/29012371/frontend-deploy-files.zip)
-
----
-
-#### [기능 3] Observability 기반 장애 감지 및 Slack 알림
+#### [기능 2] Observability 기반 장애 감지 및 Slack 알림
 
 - **기능 설명:**
 장애 발생 시 운영자가 빠르게 상태를 파악할 수 있도록 Prometheus, Grafana, Loki, Tempo, Alloy, Alertmanager 기반 Observability 환경을 구성했습니다. 서버와 애플리케이션의 Metric, Log, Trace를 수집하고 Grafana에서 시각화하며, 장애 조건이 감지되면 Alertmanager를 통해 Slack으로 알림을 전송하도록 구성했습니다.
@@ -207,7 +170,7 @@ inhibit_rules:
 
 ---
 
-#### [기능 4] Veeam 기반 DR 서버 복구 및 서비스 재개
+#### [기능 3] Veeam 기반 DR 서버 복구 및 서비스 재개
 
 - **기능 설명:**
 Main 서버 장애가 장기화될 경우에도 핵심 서비스를 빠르게 재개할 수 있도록 Veeam 기반 백업 및 DR 복구 구조를 구성했습니다. Main 서버의 VM 백업을 기반으로 DR 서버를 복구하고, 복구 이후 서비스 상태와 모니터링 수집 설정을 점검하여 장애 상황에서도 서비스 연속성을 확보할 수 있도록 했습니다.
@@ -248,7 +211,7 @@ $result = Invoke-VMScript `
 
 ---
 
-#### [기능 5] Kafka·Redis 기반 거래 정합성 보장
+#### [기능 4] Kafka·Redis 기반 거래 정합성 보장
 
 - **기능 설명:**
 주문, 체결, 알림, 랭킹 갱신 과정에서 데이터 정합성이 깨지지 않도록 Kafka와 Redis를 활용했습니다. Kafka는 주문 요청과 체결 결과를 비동기 이벤트로 전달하여 채널계와 계정계 간 결합도를 낮추고, Consumer 멱등 처리를 통해 동일 이벤트가 재전송되어도 중복 반영되지 않도록 했습니다. 또한 Redis Lua Script를 활용해 증거금 선점과 취소 보상을 원자적으로 처리하여 동시 주문 상황에서도 잔고 불일치를 방지했습니다.
@@ -280,7 +243,7 @@ public ReserveResult reserve(long memberId, long contestId, BigDecimal amount) {
 
 ---
 
-#### [기능 6] On-Prem 클러스터링 및 HA/FT 기반 서버 이중화
+#### [기능 5] On-Prem 클러스터링 및 HA/FT 기반 서버 이중화
 
 - **기능 설명:**
 On-Premise 환경에서 단일 서버 장애로 인해 핵심 거래 시스템이 중단되지 않도록 클러스터링 및 HA/FT 기반 이중화 구조를 구성했습니다. Main 서버, 원장 시스템, 체결 엔진 등 주요 구성 요소가 장애 상황에서도 복구 가능하도록 설계하고, 서버 장애 발생 시 대체 자원으로 전환될 수 있는 구조를 마련했습니다. 이를 통해 온프레미스 내부 장애에 대한 복원력을 높이고 안정적인 운영 기반을 확보했습니다.
@@ -319,29 +282,5 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') post-failover DONE on ${NEW_MASTER_HOST}:${NE
 
 - **코드 링크(스크립트 링크):**
 [orch-post-failover.sh](https://github.com/user-attachments/files/29013191/orch-post-failover.sh)
-
----
-
-#### [기능 7] Site-to-Site VPN 기반 AWS · On-Prem 연동
-
-- **기능 설명:**
-AWS EKS에서 동작하는 사용자 서비스와 On-Premise의 원장·체결 시스템이 안전하게 통신할 수 있도록 Site-to-Site VPN 기반 하이브리드 네트워크를 구성했습니다. AWS VPC와 On-Prem 네트워크 간 라우팅을 설정하고, 보안 그룹 및 방화벽 정책을 통해 필요한 트래픽만 허용하여 클라우드 서비스와 내부 핵심 시스템이 분리된 상태에서도 연동될 수 있도록 했습니다.
-
-- **핵심 코드(스크립트):**
-```bash
-configure
-
-set protocols static route 0.0.0.0/0 next-hop 10.6.10.2
-set protocols static route 10.4.0.0/16 next-hop 10.3.0.1
-set protocols static route 10.5.0.0/16 next-hop 10.3.0.2
-set protocols static route 10.14.0.0/16 next-hop 10.6.10.2
-
-commit
-save
-exit
-```
-
-- **코드 링크(스크립트 링크):**
-[vyos-static-routes.sh](https://github.com/user-attachments/files/29013389/vyos-static-routes.sh)
 
 
