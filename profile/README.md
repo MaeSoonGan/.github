@@ -1,8 +1,8 @@
 # [우리FISA 6기] 클라우드 엔지니어링 1팀 — 매순간(MaeSoonGan)
 
-> 실제 증권사 시스템 아키텍처를 모방한 **모의투자 거래 플랫폼**
+> **장애 상황에서도 멈추지 않는** 고가용성 모의투자 거래 플랫폼
 >
-> 채널계(고객 접점) / 계정계(원장) / 체결(매칭 엔진) 분리 구조를 **AWS 클라우드 ↔ 온프레미스 하이브리드**로 구현
+> EKS 오토스케일링 · 인프라 이중화 · DR 서버로 무중단 운영을 지향하며, 증권사 표준 **채널계 / 계정계 / 체결계 분리**를 **AWS 클라우드 ↔ 온프레미스 하이브리드**로 구현
 
 ---
 
@@ -10,11 +10,17 @@
 
 ### 주제
 
-실제 증권사가 채택하는 **채널계 / 계정계 / 체결계 분리 구조**를 재현하고, 이를 AWS 클라우드(채널계) ↔ 온프레미스(계정계·체결) 하이브리드 환경에 배치한 모의투자 거래 플랫폼입니다. 한국투자증권 Open API의 실시간 시세를 기반으로 가상 자산으로 매수/매도를 연습하고, 모의투자 대회로 수익률 순위를 겨룰 수 있습니다.
+매순간은 **장애 상황에서도 서비스를 이어나갈 수 있는 고가용성** 확보를 최우선 목표로 설계한 모의투자 거래 플랫폼입니다. 실제 증권사가 채택하는 **채널계 / 계정계 / 체결계 분리 구조**를 AWS 클라우드(채널계) ↔ 온프레미스(계정계·체결) 하이브리드 환경에 배치하되, **EKS 오토스케일링 · 인프라 이중화 · DR 서버**로 무중단 운영을 지향합니다. 한국투자증권 Open API의 실시간 시세를 기반으로 가상 자산으로 매수/매도를 연습하고, 모의투자 대회로 수익률 순위를 겨룰 수 있습니다.
 
 ### 기획 배경
 
-트래픽 변동이 큰 채널계는 클라우드의 탄력성을, 정합성이 중요한 계정계·체결계는 온프레미스의 통제력을 활용하도록 분리하여, **증권 IT의 핵심 과제인 확장성·정합성·장애 대응·실시간성**을 프로젝트 구조에 반영하는 것을 목표로 했습니다.
+증권 서비스는 장 운영 중 단 몇 분의 장애도 큰 손실로 이어지므로, **"장애가 발생해도 멈추지 않는"** 고가용성이 핵심 과제입니다. 이를 위해 매순간은 다음과 같이 설계했습니다.
+
+- **오토스케일링** — 채널계(AWS EKS)는 장 개장·마감 트래픽 급증에 EKS 오토스케일링으로 탄력 대응
+- **이중화** — AZ 이중화, RDS Primary/Replica, Redis Multi-AZ, NAT/로드밸런서 이중화로 단일 장애점 제거
+- **DR** — 계정계(온프레미스)는 DC1 Active / DC2 Standby + Keepalived VIP + DB 복제로 데이터센터 장애 시에도 서비스 연속성 유지
+
+트래픽 변동이 큰 채널계는 클라우드의 탄력성을, 정합성이 중요한 계정계·체결계는 온프레미스의 통제력을 활용하도록 분리하여 **확장성·정합성·장애 대응·실시간성**을 함께 달성하는 것을 목표로 했습니다.
 
 ### 기술 스택
 
@@ -24,7 +30,7 @@
 | **Data**          | MySQL / MariaDB (온프레 Master·Slave, AWS RDS Replica), Redis (ElastiCache, 온프레 Redis Sentinel), Apache Kafka |
 | **External**      | 한국투자증권 Open API, WebSocket                                                                                  |
 | **Cloud (AWS)**   | EKS, RDS, ElastiCache, ECR, ALB/NLB, WAF, Route 53, S3                                                            |
-| **On-Premise**    | VMware ESXi / vCenter, Rocky Linux 9, Docker Compose, Keepalived, pfSense (Site-to-Site VPN 종단)                |
+| **On-Premise**    | VMware ESXi / vCenter, Rocky Linux 9, Docker Compose, Keepalived, pfSense (Site-to-Site VPN 종단)                 |
 | **IaC / CI·CD**  | Terraform, GitHub Actions, GitLab CE + ArgoCD + Argo Rollouts                                                     |
 | **Observability** | Prometheus, Grafana, Loki, Jaeger, Grafana Alloy, OpenTelemetry                                                   |
 
@@ -64,25 +70,25 @@
 
 **채널계 (AWS EKS)**
 
-| 서비스 | 책임 |
-| --- | --- |
-| `auth-service` | 회원가입·로그인·JWT 발급/재발급·이메일 인증 |
-| `admin-service` | 회원·대회·공지·시스템 관리, 대회 랭킹 스케줄러 |
-| `contest-service` | 모의투자 대회 조회·참가·탈퇴·랭킹 |
-| `market-service` | 종목·차트·지수·관심종목, KIS 시세 스냅샷 |
-| `order-service` | 주문 접수·취소, 포트폴리오, 증거금(주문가능금액) 예약 |
-| `notification-api` | 알림·공지 발행/조회, 시세 알림 스케줄러 |
-| `market-realtime-service` | KIS 실시간 시세 수집 → Redis 캐싱 → WebSocket 송출 |
-| `user-realtime-service` | 사용자별 실시간 이벤트 푸시(SSE) |
-| `trade-sync-worker` | Kafka 이벤트 소비 → 채널 DB 동기화(Read-Model) |
+| 서비스                      | 책임                                                   |
+| --------------------------- | ------------------------------------------------------ |
+| `auth-service`            | 회원가입·로그인·JWT 발급/재발급·이메일 인증         |
+| `admin-service`           | 회원·대회·공지·시스템 관리, 대회 랭킹 스케줄러      |
+| `contest-service`         | 모의투자 대회 조회·참가·탈퇴·랭킹                   |
+| `market-service`          | 종목·차트·지수·관심종목, KIS 시세 스냅샷            |
+| `order-service`           | 주문 접수·취소, 포트폴리오, 증거금(주문가능금액) 예약 |
+| `notification-api`        | 알림·공지 발행/조회, 시세 알림 스케줄러               |
+| `market-realtime-service` | KIS 실시간 시세 수집 → Redis 캐싱 → WebSocket 송출   |
+| `user-realtime-service`   | 사용자별 실시간 이벤트 푸시(SSE)                       |
+| `trade-sync-worker`       | Kafka 이벤트 소비 → 채널 DB 동기화(Read-Model)        |
 
 **계정계 (On-Premises)**
 
-| 서비스 | 책임 |
-| --- | --- |
+| 서비스               | 책임                                                               |
+| -------------------- | ------------------------------------------------------------------ |
 | `execution-engine` | 주문 수신·상태 관리, 시장가/지정가 체결(매칭), 부분체결, 자동취소 |
-| `ledger-service` | 계좌 원장·잔고·보유종목·거래내역·손익(PnL), EOD 마감·대사 |
-| `member-service` | 회원 자격증명(비밀번호) 관리, 보안 명령 처리 |
+| `ledger-service`   | 계좌 원장·잔고·보유종목·거래내역·손익(PnL), EOD 마감·대사     |
+| `member-service`   | 회원 자격증명(비밀번호) 관리, 보안 명령 처리                       |
 
 **MSA 채택 이유**
 
